@@ -1,0 +1,12 @@
+version: 1.0
+provider:
+  name: openfaas
+  gateway: http://127.0.0.1:8080
+functions:
+  main-function:
+    lang: node14
+    handler: ./src
+    image: apimate/main-function:test0.1    
+    environment:
+      JWT_TOKEN_KEY: apimate-jwt-tokenkey-usPFBZER4mJ9vhWabdQ0
+
