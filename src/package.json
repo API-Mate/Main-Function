@@ -8,5 +8,10 @@
   },
   "keywords": [],
   "author": "OpenFaaS Ltd",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.22.0",
+    "jsonwebtoken": "^8.5.1",
+    "mongodb": "^4.1.3"
+  }
 }

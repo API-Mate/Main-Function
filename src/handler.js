@@ -1,6 +1,7 @@
 'use strict'
 
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 var ObjectID = require('mongodb').ObjectID;
 
 const resheaders = {
@@ -38,16 +39,18 @@ module.exports = async (event, context) => {
         console.log(vfret);
         if (!vfret.user_id) return context.headers(resheaders).fail(vfret.toString());
         userid = vfret.user_id;
-        user = await axios.post('http://gateway.openfaas:8080/function/data-function',
+        await axios.post('http://gateway.openfaas:8080/function/data-function',
           {
             table: "Users",
-            record: { _id: userid },
+            record: { email: vfret.email },
             query: "findOne"
           }).then(function (response) {
-            return response;
+            user = response.data;
           });
       } else return context.headers(resheaders).fail('Not Authorized');
 
+      console.log('user');
+      console.log(user);
       let ret = await HandleRequest(req);
 
       console.log(req);
@@ -78,87 +81,96 @@ module.exports = async (event, context) => {
 }
 
 
-async function HandleRequest(db, req) {
-  return new Promise(resolve => {
-    const data = req.data;
-    const action = req.action;
-    const connectors_ids = req.connectors;
+async function HandleRequest(req) {
+  const data = req.data;
+  const action = req.action;
+  const connectors_ids = req.connectors;
 
-    // let connectors = connectors_ids.filter(function (id) {
-    //   return user.accounts.indexOf(id);
-    // });
-    // console.log(connectors);
+  // let connectors = connectors_ids.filter(function (id) {
+  //   return user.accounts.indexOf(id);
+  // });
+  // console.log(connectors);
 
-    let rs = {
-      _id: new ObjectID(),
-      all: connectors_ids.length,
-      success: 0,
-      fail: 0,
-      scheduled: 0,
-      log = "action Started\n",
-      requests: req,
-      responses: [],
-      active: true,
-    };
-    if (action == "send") {
-      if (data.schedule.toLower() == 'now' || new Date(data.schedule) <= new Date()) {
-        connectors_ids.forEach(connector_id => {
-          const connector = user.accounts[connector_id];
-          await axios.post('http://gateway.openfaas:8080/function/' + connector.name.toLower() + '-function',
-            {
-              content: data.content,
-              credential: connector.credential,
-            }).then(function (response) {
-              rs.log += '[success]' + response.toString();
-              rs.responses.push({
-                connector_id: connector_id, connector_name: connector.name.toLower(), connector, request: {
-                  content: data.content,
-                  credential: connector.credential,
-                }, response: response,
-                status: 'success',
-                datetime: new Date()
-              });
-              rs.success++;
-            }).catch(function (error) {
-              rs.log += '[fail]' + error.toString();
-              rs.responses.push({
-                connector_id: connector_id, connector_name: connector.name.toLower(), connector, request: {
-                  content: data.content,
-                  credential: connector.credential,
-                }, response: response,
-                status: 'fail',
-                datetime: new Date()
-              });
-              rs.fail++;
+  let rs = {
+    _id: new ObjectID(),
+    user_id: userid,
+    all: connectors_ids.length,
+    success: 0,
+    fail: 0,
+    scheduled: 0,
+    log: "action Started\n",
+    requests: req,
+    responses: [],
+    datetime: new Date(),
+    active: true,
+  };
+  console.log(rs);
+
+  if (action == "send") {
+    if (data.schedule.toLowerCase() == 'now' || new Date(data.schedule) <= new Date()) {
+      console.log('sendtoconnectorsnow');
+      for (const connector_id of connectors_ids) {
+        const connector = user.accounts[connector_id];
+        console.log(connector);
+        await axios.post('http://gateway.openfaas:8080/function/' + connector.name.toLowerCase() + '-connector',
+          {
+            message: data.content,
+            credential: connector.credential,
+          }).then(function (response) {
+            console.log(response)
+            rs.log += '[success]' + JSON.stringify(response.data) + '\n';
+            rs.responses.push({
+              connector_id: connector_id, connector_name: connector.name.toLowerCase(), connector, request: {
+                message: data.content,
+                credential: connector.credential,
+              }, response: response.data,
+              status: 'success',
+              datetime: new Date()
             });
-        });
-        await axios.post('http://gateway.openfaas:8080/function/data-function',
-          {
-            table: "Requests",
-            record: rs,
-            query: "insertOne"
-          }).then(function (response) {
-            rs.log += '[successDb]' + response.toString();
+            rs.success++;
           }).catch(function (error) {
-            rs.log += '[failOnDb]' + error.toString();
-          });
-      } else {
-        rs.scheduled=rs.all;
-        rs.log="schedule submitted\n";
-        await axios.post('http://gateway.openfaas:8080/function/data-function',
-          {
-            table: "Requests",
-            record: rs,
-            query: "insertOne"
-          }).then(function (response) {
-            rs.log += '[scheduledDb]' + response.toString();
-          }).catch(function (error) {
-            rs.log += '[failOnDb]' + error.toString();
+            console.log(error)
+            rs.log += '[fail]' + error.message + '\n';
+            rs.responses.push({
+              connector_id: connector_id, connector_name: connector.name.toLowerCase(), connector, request: {
+                message: data.content,
+                credential: connector.credential,
+              }, response: error.message,
+              status: 'fail',
+              datetime: new Date()
+            });
+            rs.fail++;
           });
       }
+
+      console.log('dblognow');
+      await axios.post('http://gateway.openfaas:8080/function/data-function',
+        {
+          table: "Requests",
+          record: rs,
+          query: "insertOne"
+        }).then(function (response) {
+          rs.log += '[successDb]' + JSON.stringify(response) + '\n';
+        }).catch(function (error) {
+          rs.log += '[failOnDb]' + JSON.stringify(error);
+        });
+    } else {
+      rs.scheduled = rs.all;
+      rs.log = "schedule submitted\n";
+      await axios.post('http://gateway.openfaas:8080/function/data-function',
+        {
+          table: "Requests",
+          record: rs,
+          query: "insertOne"
+        }).then(function (response) {
+          rs.log += '[scheduledDb]' + JSON.stringify(response.data)+'\n';
+        }).catch(function (error) {
+          rs.log += '[failOnDb]' + JSON.stringify(error);
+        });
     }
-    resolve(rs);
-  });
+  }
+  console.log(rs);
+  return rs;
 }
 
 const verifyToken = (token) => {
