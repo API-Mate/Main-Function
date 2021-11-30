@@ -6,7 +6,13 @@ functions:
   main-function:
     lang: node14
     handler: ./src
-    image: apimate/main-function:1.0.0
+    image: apimate/main-function:1.0.4
+    labels:
+      com.openfaas.scale.min: 1
+      com.openfaas.scale.max: 20
+      com.openfaas.scale.factor: 20      
     environment:
-      JWT_TOKEN_KEY: apimate-jwt-tokenkey-usPFBZER4mJ9vhWabdQ0
-
+        read_timeout: "65s"
+        write_timeout: "65s"
+        exec_timeout: "65s"
+        JWT_TOKEN_KEY: apimate-jwt-tokenkey-usPFBZER4mJ9vhWabdQ0
